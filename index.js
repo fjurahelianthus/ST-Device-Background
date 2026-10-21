@@ -10,7 +10,7 @@
 // Portrait:  device portrait -> global portrait -> device landscape -> global landscape
 // Nothing set: the host's own background is left alone.
 
-const VERSION = '0.3.3';
+const VERSION = '0.3.4';
 const LOCAL_KEY = 'device_background_v3';
 const SHARED_KEY = 'device_background';
 const ORIENTATIONS = ['landscape', 'portrait'];
@@ -343,12 +343,13 @@ function refresh() {
     highlightGallery();
 }
 
+let galleryObserver = null;
+let clickListenerAttached = false;
+
+// Safe to call repeatedly: it does nothing while the tab is already in place.
 function mountPanel() {
     const $list = $('#bg_tabs .bg_tabs_list');
-    if (!$list.length) {
-        console.warn('[device-background] background tabs not found; the panel was not added');
-        return false;
-    }
+    if (!$list.length || $list.find('.device_bg_tab').length) return false;
 
     const $deviceTab = $('<li class="bg_tab_button device_bg_tab"><a></a></li>');
     $deviceTab.find('a').text(tr('Device'));
@@ -384,12 +385,17 @@ function mountPanel() {
         refresh();
     });
 
-    document.addEventListener('click', onGalleryClick, true);
+    if (!clickListenerAttached) {
+        document.addEventListener('click', onGalleryClick, true);
+        clickListenerAttached = true;
+    }
 
+    galleryObserver?.disconnect();
     const gallery = document.getElementById('bg_menu_content');
     if (gallery) {
         // The host re-renders thumbnails and re-applies its own highlight; put ours back.
-        new MutationObserver(highlightGallery).observe(gallery, {
+        galleryObserver = new MutationObserver(highlightGallery);
+        galleryObserver.observe(gallery, {
             childList: true,
             subtree: true,
             attributes: true,
@@ -397,6 +403,41 @@ function mountPanel() {
         });
     }
     return true;
+}
+
+// The host may create the Backgrounds panel after this extension loads (or park and
+// restore it), so mount whenever it shows up without our tab instead of only at startup.
+function watchForPanel() {
+    let pending = false;
+    let markupReported = false;
+
+    const check = () => {
+        pending = false;
+        watchBackground();
+        if (mountPanel()) {
+            refresh();
+            return;
+        }
+        const tabsPresent = document.getElementById('bg_tabs');
+        const listPresent = document.querySelector('#bg_tabs .bg_tabs_list');
+        if (tabsPresent && !listPresent && !markupReported) {
+            markupReported = true;
+            // Give a half-rendered panel a moment before calling the markup unsupported.
+            setTimeout(() => {
+                if (!document.querySelector('#bg_tabs .bg_tabs_list')) {
+                    reportProblem('background tabs markup not recognised');
+                }
+            }, 3000);
+        }
+    };
+
+    new MutationObserver(() => {
+        if (pending) return;
+        pending = true;
+        setTimeout(check, 50);
+    }).observe(document.body, { childList: true, subtree: true });
+
+    check();
 }
 
 // Some hosts have no reachable console, so problems are reported on screen instead.
@@ -425,21 +466,13 @@ function reportProblem(reason, error) {
 jQuery(() => {
     try {
         const { eventSource, event_types } = getContext();
-        const mounted = mountPanel();
-        watchBackground();
+        watchForPanel();
         refresh();
         initFromNative();
 
         portraitQuery.addEventListener('change', refresh);
         eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(apply, 0));
         eventSource.on(event_types.SETTINGS_UPDATED, () => setTimeout(refresh, 0));
-
-        // Catches the tab being absent, and also removed again by a later re-render.
-        setTimeout(() => {
-            if (!document.querySelector('.device_bg_tab')) {
-                reportProblem(mounted ? 'tab was removed after mounting' : 'background tabs not found');
-            }
-        }, 2500);
     } catch (error) {
         console.error('[device-background]', error);
         reportProblem('startup failed', error);

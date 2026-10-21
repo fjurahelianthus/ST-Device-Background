@@ -1,0 +1,19 @@
+#device_bg_settings .device_bg_row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    flex-wrap: wrap;
+}
+
+#device_bg_settings .device_bg_row select,
+#device_bg_settings .device_bg_row input[type="text"] {
+    flex: 1 1 160px;
+    min-width: 0;
+}
+
+#device_bg_settings .device_bg_hint {
+    opacity: 0.7;
+    font-size: 0.85em;
+    margin: 4px 0;
+}

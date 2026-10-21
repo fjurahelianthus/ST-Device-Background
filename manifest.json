@@ -1,0 +1,11 @@
+{
+    "display_name": "Device Background",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "nyakokaslana",
+    "version": "0.1.0",
+    "homePage": ""
+}

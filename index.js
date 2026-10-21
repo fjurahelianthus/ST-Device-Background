@@ -10,6 +10,7 @@
 // Portrait:  device portrait -> global portrait -> device landscape -> global landscape
 // Nothing set: the host's own background is left alone.
 
+const VERSION = '0.3.3';
 const LOCAL_KEY = 'device_background_v3';
 const SHARED_KEY = 'device_background';
 const ORIENTATIONS = ['landscape', 'portrait'];
@@ -398,14 +399,49 @@ function mountPanel() {
     return true;
 }
 
-jQuery(() => {
-    const { eventSource, event_types } = getContext();
-    mountPanel();
-    watchBackground();
-    refresh();
-    initFromNative();
+// Some hosts have no reachable console, so problems are reported on screen instead.
+function reportProblem(reason, error) {
+    const tabList = document.querySelector('#bg_tabs .bg_tabs_list');
+    const lines = [
+        `v${VERSION}: ${reason}`,
+        error ? `error: ${error?.message ?? error}` : null,
+        `#bg_tabs: ${Boolean(document.getElementById('bg_tabs'))}`,
+        `.bg_tabs_list: ${Boolean(tabList)}`,
+        `device tabs in DOM: ${document.querySelectorAll('.device_bg_tab').length}`,
+        `jQuery UI tabs: ${typeof $.fn.tabs}`,
+        `context: extensionSettings=${typeof getContext().extensionSettings}, chatMetadata=${typeof getContext().chatMetadata}`,
+        `viewport: ${window.innerWidth}x${window.innerHeight}`,
+        tabList ? `tab list: ${tabList.innerHTML.replace(/\s+/g, ' ').slice(0, 400)}` : null,
+    ].filter(Boolean);
+    console.warn('[device-background]', ...lines);
+    toastr.error(lines.join('\n'), 'Device Background', {
+        timeOut: 0,
+        extendedTimeOut: 0,
+        closeButton: true,
+        escapeHtml: true,
+    });
+}
 
-    portraitQuery.addEventListener('change', refresh);
-    eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(apply, 0));
-    eventSource.on(event_types.SETTINGS_UPDATED, () => setTimeout(refresh, 0));
+jQuery(() => {
+    try {
+        const { eventSource, event_types } = getContext();
+        const mounted = mountPanel();
+        watchBackground();
+        refresh();
+        initFromNative();
+
+        portraitQuery.addEventListener('change', refresh);
+        eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(apply, 0));
+        eventSource.on(event_types.SETTINGS_UPDATED, () => setTimeout(refresh, 0));
+
+        // Catches the tab being absent, and also removed again by a later re-render.
+        setTimeout(() => {
+            if (!document.querySelector('.device_bg_tab')) {
+                reportProblem(mounted ? 'tab was removed after mounting' : 'background tabs not found');
+            }
+        }, 2500);
+    } catch (error) {
+        console.error('[device-background]', error);
+        reportProblem('startup failed', error);
+    }
 });

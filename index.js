@@ -15,6 +15,32 @@ const SHARED_KEY = 'device_background';
 const ORIENTATIONS = ['landscape', 'portrait'];
 const ORIENTATION_TITLE = { landscape: 'Landscape', portrait: 'Portrait' };
 
+const STRINGS = {
+    'zh-cn': {
+        'Device': '本设备',
+        'Landscape': '横向',
+        'Portrait': '纵向',
+        'Follow': '跟随',
+        'follows': '跟随',
+        'not set': '未设置',
+        'Override chat-locked backgrounds (this device)': '覆盖聊天锁定的背景（仅本设备）',
+    },
+};
+
+// Follows the host's language setting, which SillyTavern keeps in localStorage.
+function currentLocale() {
+    let language = '';
+    try {
+        language = localStorage.getItem('language') ?? '';
+    } catch {
+        // storage unavailable
+    }
+    language = (language || navigator.language || 'en').toLowerCase();
+    return language === 'zh' || language.startsWith('zh-cn') || language.startsWith('zh-hans') ? 'zh-cn' : language;
+}
+
+const tr = text => STRINGS[currentLocale()]?.[text] ?? text;
+
 const portraitQuery = window.matchMedia('(orientation: portrait)');
 
 const emptySlots = () => ({ landscape: null, portrait: null });
@@ -214,6 +240,18 @@ function onGalleryClick(event) {
     setSlot(modeScope(), target, file);
 }
 
+// The native zoom/select buttons are positioned over the right end of the tab row;
+// keep the tabs clear of them however wide that group currently is.
+function reserveControlsSpace(list) {
+    const controls = list.querySelector('.heading-controls');
+    if (!controls || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+        list.style.paddingRight = `${controls.offsetWidth + 10}px`;
+    };
+    update();
+    new ResizeObserver(update).observe(controls);
+}
+
 function setMode(next) {
     if (mode !== next) target = 'landscape';
     mode = next;
@@ -260,7 +298,7 @@ function renderControls() {
             .addClass(`device_bg_${orientation}`)
             .toggleClass('device_bg_target', orientation === target)
             .toggleClass('device_bg_live', orientation === live)
-            .attr('title', file ?? (follows ? `follows ${follows}` : 'not set'));
+            .attr('title', file ?? (follows ? `${tr('follows')} ${follows}` : tr('not set')));
 
         const shown = file ?? follows;
         if (shown) {
@@ -270,7 +308,7 @@ function renderControls() {
         }
 
         const $text = $('<div class="device_bg_rect_text"></div>');
-        $text.append($('<div class="device_bg_rect_title"></div>').text(ORIENTATION_TITLE[orientation]));
+        $text.append($('<div class="device_bg_rect_title"></div>').text(tr(ORIENTATION_TITLE[orientation])));
         $text.append(
             $('<div class="device_bg_rect_file"></div>')
                 .toggleClass('device_bg_dim', !file)
@@ -279,7 +317,7 @@ function renderControls() {
         $rect.append($text);
 
         if (clearable) {
-            const $clear = $('<div class="device_bg_clear fa-solid fa-xmark" title="Follow"></div>');
+            const $clear = $('<div class="device_bg_clear fa-solid fa-xmark"></div>').attr('title', tr('Follow'));
             $clear.on('click', event => {
                 event.stopPropagation();
                 setSlot(scope, orientation, null);
@@ -311,8 +349,10 @@ function mountPanel() {
         return false;
     }
 
-    const $deviceTab = $('<li class="bg_tab_button device_bg_tab"><a>Device</a></li>');
+    const $deviceTab = $('<li class="bg_tab_button device_bg_tab"><a></a></li>');
+    $deviceTab.find('a').text(tr('Device'));
     globalTabButton().after($deviceTab);
+    reserveControlsSpace($list[0]);
 
     $deviceTab.on('click', () => {
         mode = 'device';
@@ -331,9 +371,10 @@ function mountPanel() {
     <div id="device_bg_rects"></div>
     <label class="checkbox_label device_bg_lock">
         <input id="device_bg_override_lock" type="checkbox" />
-        <span>Override chat-locked backgrounds (this device)</span>
+        <span></span>
     </label>
 </div>`);
+    $controls.find('.device_bg_lock span').text(tr('Override chat-locked backgrounds (this device)'));
     $list.after($controls);
 
     $('#device_bg_override_lock').on('change', function () {

@@ -2,6 +2,21 @@
     cursor: pointer;
 }
 
+/* Three tabs no longer fit at the host's minimum width on phones, so let them share the row. */
+@media screen and (max-width: 1000px) {
+    #bg_tabs .bg_tabs_list .bg_tab_button {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    #bg_tabs .bg_tabs_list .bg_tab_button a {
+        overflow: hidden;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
 #device_bg_controls {
     display: flex;
     flex-wrap: wrap;

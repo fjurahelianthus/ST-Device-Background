@@ -2,7 +2,7 @@
 
 A SillyTavern / TauriTavern extension that picks the background by **screen orientation** (landscape / portrait), so images fit properly on phones, tablets and desktop windows. It lives inside the native Backgrounds panel.
 
-一個 SillyTavern / TauriTavern 擴充:依螢幕**橫向/直向**選擇背景,解決同一張圖在不同比例下填充不佳的問題。介面直接整合在原生的「背景」面板裡。
+一个 SillyTavern / TauriTavern 扩展:按屏幕**横向/纵向**选择背景,解决同一张图在不同比例下填充不佳的问题。界面直接集成在原生的“背景”面板里。界面文字会跟随酒馆的语言设置,目前提供简体中文和英文。
 
 ## How it works / 運作方式
 
@@ -22,7 +22,7 @@ An unset portrait therefore follows landscape, so a single image still works eve
 
 On first run, the native background is adopted as Global landscape.
 
-四個格子都由擴充自己保存,設定後就不再讀取原生背景。直向沒設定時會沿用橫向,所以只放一張圖也能正常運作。第一次執行時,會把原生背景當作「全局橫向」。
+四个格子都由扩展自己保存,设置后就不再读取原生背景。纵向没设置时会沿用横向,所以只放一张图也能正常工作。第一次运行时,会把原生背景当作“全局横向”。
 
 ## Usage / 使用
 
@@ -42,7 +42,7 @@ Option: **Override chat-locked backgrounds (this device)**. Chat-locked backgrou
 
 Install from the extension manager with this repository's URL, or copy this folder into `data/default-user/extensions/`.
 
-用擴充功能的安裝介面貼上本倉庫網址,或把整個資料夾複製到 `data/default-user/extensions/`。
+在扩展管理的安装界面粘贴本仓库地址,或把整个文件夹复制到 `data/default-user/extensions/`。
 
 ## Notes / 注意
 

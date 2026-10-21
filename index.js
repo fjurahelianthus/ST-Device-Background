@@ -220,6 +220,29 @@ function setMode(next) {
     refresh();
 }
 
+// Prefer the host's thumbnail endpoint and fall back to the full image. Resolved
+// urls are cached so re-rendering the rectangles does not flash.
+const previewUrls = new Map();
+
+function loadPreview($layer, file) {
+    const cached = previewUrls.get(file);
+    if (cached) {
+        $layer.css('background-image', `url("${cached}")`);
+        return;
+    }
+
+    const thumbnail = `/thumbnail?type=bg&file=${encodeURIComponent(file)}`;
+    const full = `backgrounds/${encodeURIComponent(file)}`;
+    const probe = new Image();
+    const use = url => {
+        previewUrls.set(file, url);
+        $layer.css('background-image', `url("${url}")`);
+    };
+    probe.onload = () => use(thumbnail);
+    probe.onerror = () => use(full);
+    probe.src = thumbnail;
+}
+
 function renderControls() {
     const $root = $('#device_bg_rects');
     if (!$root.length) return;
@@ -239,12 +262,21 @@ function renderControls() {
             .toggleClass('device_bg_live', orientation === live)
             .attr('title', file ?? (follows ? `follows ${follows}` : 'not set'));
 
-        $rect.append($('<div class="device_bg_rect_title"></div>').text(ORIENTATION_TITLE[orientation]));
-        $rect.append(
+        const shown = file ?? follows;
+        if (shown) {
+            const $preview = $('<div class="device_bg_rect_preview"></div>').toggleClass('device_bg_dim', !file);
+            loadPreview($preview, shown);
+            $rect.append($preview);
+        }
+
+        const $text = $('<div class="device_bg_rect_text"></div>');
+        $text.append($('<div class="device_bg_rect_title"></div>').text(ORIENTATION_TITLE[orientation]));
+        $text.append(
             $('<div class="device_bg_rect_file"></div>')
                 .toggleClass('device_bg_dim', !file)
                 .text(file ?? (follows ? `↳ ${follows}` : '—')),
         );
+        $rect.append($text);
 
         if (clearable) {
             const $clear = $('<div class="device_bg_clear fa-solid fa-xmark" title="Follow"></div>');

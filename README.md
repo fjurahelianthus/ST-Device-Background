@@ -30,7 +30,7 @@ Open the Backgrounds panel. The tab row is now **Global | Device | Chat**, with 
 
 1. Pick a tab: **Global** edits the synced slots, **Device** edits this browser's own slots.
 2. Click a rectangle to choose which slot receives the next image.
-3. Click a thumbnail in the gallery. The rectangle shows the file name; the gallery highlights the slot's current image.
+3. Click a thumbnail in the gallery. The rectangle shows a preview and the file name; the gallery highlights the slot's current image. A dimmed preview with a ↳ means the slot is unset and shows the image it follows.
 4. The **×** on a rectangle clears it so it follows the layer below. Global landscape cannot be cleared, only replaced.
 5. A dot on a rectangle marks the orientation currently in use.
 

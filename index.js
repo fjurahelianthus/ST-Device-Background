@@ -10,7 +10,7 @@
 // Portrait:  device portrait -> global portrait -> device landscape -> global landscape
 // Nothing set: the host's own background is left alone.
 
-const VERSION = '0.3.4';
+const VERSION = '0.3.5';
 const LOCAL_KEY = 'device_background_v3';
 const SHARED_KEY = 'device_background';
 const ORIENTATIONS = ['landscape', 'portrait'];
@@ -241,18 +241,6 @@ function onGalleryClick(event) {
     setSlot(modeScope(), target, file);
 }
 
-// The native zoom/select buttons are positioned over the right end of the tab row;
-// keep the tabs clear of them however wide that group currently is.
-function reserveControlsSpace(list) {
-    const controls = list.querySelector('.heading-controls');
-    if (!controls || typeof ResizeObserver === 'undefined') return;
-    const update = () => {
-        list.style.paddingRight = `${controls.offsetWidth + 10}px`;
-    };
-    update();
-    new ResizeObserver(update).observe(controls);
-}
-
 function setMode(next) {
     if (mode !== next) target = 'landscape';
     mode = next;
@@ -354,7 +342,6 @@ function mountPanel() {
     const $deviceTab = $('<li class="bg_tab_button device_bg_tab"><a></a></li>');
     $deviceTab.find('a').text(tr('Device'));
     globalTabButton().after($deviceTab);
-    reserveControlsSpace($list[0]);
 
     $deviceTab.on('click', () => {
         mode = 'device';

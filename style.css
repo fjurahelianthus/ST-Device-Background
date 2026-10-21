@@ -2,6 +2,22 @@
     cursor: pointer;
 }
 
+/* The host floats the zoom/select buttons over the right end of the tab row and only
+   reserves room for two tabs. Make them an ordinary item at the end of the row instead,
+   so the tabs share whatever width is left and can never run underneath them. */
+#bg_tabs .bg_tabs_list {
+    align-items: center;
+    padding-right: 0;
+}
+
+#bg_tabs .bg_tabs_list .heading-controls {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    margin-left: auto;
+}
+
 /* Three tabs no longer fit at the host's minimum width on phones, so let them share the row. */
 @media screen and (max-width: 1000px) {
     #bg_tabs .bg_tabs_list .bg_tab_button {

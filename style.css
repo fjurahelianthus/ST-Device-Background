@@ -1,76 +1,94 @@
-#device_bg_settings .device_bg_hint {
-    opacity: 0.7;
-    font-size: 0.85em;
-    margin: 4px 0;
+#bg_tabs .bg_tabs_list .device_bg_tab a {
+    cursor: pointer;
 }
 
-#device_bg_settings .device_bg_row {
+#device_bg_controls {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 6px 0;
     flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 5px 0 8px;
 }
 
-#device_bg_settings .device_bg_section {
-    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.4));
-    border-radius: 8px;
-    padding: 6px 8px;
-    margin: 8px 0;
+#device_bg_rects {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
 }
 
-#device_bg_settings .device_bg_section.device_bg_current {
+#device_bg_rects .device_bg_rect {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px 6px;
+    overflow: hidden;
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.75em;
+    color: var(--SmartThemeBodyColor);
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    opacity: 0.75;
+    transition: opacity var(--animation-duration-2x, 0.2s);
+}
+
+#device_bg_rects .device_bg_rect:hover {
+    opacity: 1;
+}
+
+#device_bg_rects .device_bg_landscape {
+    width: 110px;
+    height: 62px;
+}
+
+#device_bg_rects .device_bg_portrait {
+    width: 62px;
+    height: 110px;
+}
+
+#device_bg_rects .device_bg_target {
+    opacity: 1;
     border-color: var(--SmartThemeQuoteColor, currentColor);
+    background-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 33%, var(--SmartThemeBlurTintColor) 66%);
 }
 
-#device_bg_settings .device_bg_title {
-    font-weight: bold;
-    margin-bottom: 4px;
+#device_bg_rects .device_bg_live .device_bg_rect_title::before {
+    content: "\25CF\00a0";
 }
 
-#device_bg_settings .device_bg_line {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 4px 0;
-    flex-wrap: wrap;
+#device_bg_rects .device_bg_rect_title {
+    font-weight: 600;
 }
 
-#device_bg_settings .device_bg_scope {
-    flex: 0 0 8.5em;
-    font-size: 0.9em;
+#device_bg_rects .device_bg_rect_file {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-#device_bg_settings .device_bg_value {
-    flex: 1 1 8em;
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-
-#device_bg_settings .device_bg_dim {
-    opacity: 0.55;
+#device_bg_rects .device_bg_dim {
+    opacity: 0.6;
     font-style: italic;
 }
 
-#device_bg_settings .device_bg_winner .device_bg_scope::after {
-    content: " \2713";
+#device_bg_rects .device_bg_clear {
+    position: absolute;
+    top: 2px;
+    right: 3px;
+    padding: 2px;
+    font-size: 0.9em;
+    opacity: 0.7;
 }
 
-#device_bg_settings .device_bg_winner .device_bg_scope {
-    font-weight: bold;
+#device_bg_rects .device_bg_clear:hover {
+    opacity: 1;
 }
 
-#device_bg_settings .device_bg_picker {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 4px 0 8px;
-    padding: 6px;
-    border-radius: 6px;
-    background: rgba(128, 128, 128, 0.12);
-}
-
-#device_bg_settings .device_bg_buttons {
-    display: flex;
-    gap: 6px;
+#device_bg_controls .device_bg_lock {
+    flex: 1 1 14em;
+    font-size: 0.85em;
 }

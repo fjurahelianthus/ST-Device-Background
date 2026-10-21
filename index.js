@@ -1,27 +1,27 @@
 // Device Background
-// Picks a background by screen orientation (and optionally device type).
+// Orientation-aware backgrounds, edited from the native Backgrounds panel.
 //
-// Resolution order, first slot that is set wins:
-//   1. This device   (localStorage, never synced)      per orientation
-//   2. Shared/<type> (extension settings, synced)      per orientation, advanced mode only
-//   3. Shared/all    (extension settings, synced)      per orientation
-//   4. Whatever the host (SillyTavern) set itself
+// Four slots, all owned by this extension (the native background is ignored once
+// a slot is set):
+//   Global  landscape / portrait   extension settings, synced with settings
+//   Device  landscape / portrait   localStorage, never synced
+//
+// Landscape: device landscape -> global landscape
+// Portrait:  device portrait -> global portrait -> device landscape -> global landscape
+// Nothing set: the host's own background is left alone.
 
-const LOCAL_KEY = 'device_background_v2';
+const LOCAL_KEY = 'device_background_v3';
 const SHARED_KEY = 'device_background';
 const ORIENTATIONS = ['landscape', 'portrait'];
-const SCOPES = ['all', 'desktop', 'mobile'];
 const ORIENTATION_TITLE = { landscape: 'Landscape', portrait: 'Portrait' };
-const SCOPE_TITLE = { local: 'This device', all: 'Shared', desktop: 'Shared · Desktop', mobile: 'Shared · Mobile' };
 
 const portraitQuery = window.matchMedia('(orientation: portrait)');
-const touchQuery = window.matchMedia('(pointer: coarse) and (hover: none)');
 
 const emptySlots = () => ({ landscape: null, portrait: null });
 
 let local = loadLocal();
-let editing = null; // { scope, orientation } while the picker is open
-let libraryCache = null;
+let mode = 'global'; // which tab is shown: 'global' | 'device'
+let target = 'landscape'; // which rectangle receives the next picked image
 let hostValue = '';
 let applying = false;
 let observer = null;
@@ -29,7 +29,7 @@ let observer = null;
 // ---------- state ----------
 
 function loadLocal() {
-    const defaults = { disabled: false, overrideChatLock: false, forceClass: 'auto', slots: emptySlots() };
+    const defaults = { overrideChatLock: false, slots: emptySlots() };
     try {
         const raw = JSON.parse(localStorage.getItem(LOCAL_KEY) ?? '{}');
         return { ...defaults, ...raw, slots: { ...emptySlots(), ...(raw.slots ?? {}) } };
@@ -53,11 +53,8 @@ function getContext() {
 function getShared() {
     const store = getContext().extensionSettings;
     const current = store[SHARED_KEY] ?? {};
-    current.advanced = Boolean(current.advanced);
-    current.slots ??= {};
-    for (const scope of SCOPES) {
-        current.slots[scope] = { ...emptySlots(), ...(current.slots[scope] ?? {}) };
-    }
+    current.initialized = Boolean(current.initialized);
+    current.global = { ...emptySlots(), ...(current.global ?? {}) };
     store[SHARED_KEY] = current;
     return current;
 }
@@ -66,18 +63,42 @@ function saveShared() {
     getContext().saveSettingsDebounced();
 }
 
+const modeScope = () => (mode === 'device' ? 'local' : 'global');
+
 function getSlot(scope, orientation) {
-    return scope === 'local' ? local.slots[orientation] : getShared().slots[scope][orientation];
+    return scope === 'local' ? local.slots[orientation] : getShared().global[orientation];
 }
 
-function setSlot(scope, orientation, slot) {
+function setSlot(scope, orientation, file) {
     if (scope === 'local') {
-        local.slots[orientation] = slot;
+        local.slots[orientation] = file;
         saveLocal();
     } else {
-        getShared().slots[scope][orientation] = slot;
+        const shared = getShared();
+        shared.global[orientation] = file;
+        shared.initialized = true;
         saveShared();
     }
+    refresh();
+}
+
+// The first run adopts the native background as the global landscape.
+async function initFromNative() {
+    const shared = getShared();
+    if (shared.initialized) return;
+
+    let name = '';
+    try {
+        const module = await import('/scripts/backgrounds.js');
+        name = module.background_settings?.name ?? '';
+    } catch (error) {
+        console.warn('[device-background] could not read the native background', error);
+    }
+    if (!name) return;
+
+    shared.global.landscape = name;
+    shared.initialized = true;
+    saveShared();
     refresh();
 }
 
@@ -85,46 +106,25 @@ function setSlot(scope, orientation, slot) {
 
 const currentOrientation = () => (portraitQuery.matches ? 'portrait' : 'landscape');
 
-function currentClass() {
-    if (local.forceClass === 'desktop' || local.forceClass === 'mobile') return local.forceClass;
-    return touchQuery.matches ? 'mobile' : 'desktop';
+function resolveFile(orientation) {
+    const global = getShared().global;
+    const landscape = local.slots.landscape ?? global.landscape;
+    if (orientation === 'landscape') return landscape;
+    return local.slots.portrait ?? global.portrait ?? landscape;
 }
 
-// Scopes that take part in resolution for this device, highest priority first.
-function activeScopes() {
-    return getShared().advanced ? ['local', currentClass(), 'all'] : ['local', 'all'];
-}
-
-function resolve(orientation) {
-    for (const scope of activeScopes()) {
-        const slot = getSlot(scope, orientation);
-        if (slot) return { scope, slot };
+// What an unset rectangle in the current tab falls back to.
+function followFile(orientation) {
+    const global = getShared().global;
+    if (mode === 'device') {
+        return orientation === 'landscape' ? global.landscape : global.portrait ?? resolveFile('landscape');
     }
-    return null;
-}
-
-// What a scope would show if it were left unset: the next layer down.
-function resolveBelow(scope, orientation) {
-    const chain = activeScopes();
-    const start = chain.indexOf(scope);
-    for (const next of chain.slice(start + 1)) {
-        const slot = getSlot(next, orientation);
-        if (slot) return { scope: next, slot };
-    }
-    return null;
+    return orientation === 'portrait' ? global.landscape : null;
 }
 
 // ---------- applying ----------
 
-function slotCssUrl(slot) {
-    if (slot.source === 'url') return `url("${slot.value.replace(/"/g, '%22')}")`;
-    return `url("backgrounds/${encodeURIComponent(slot.value)}")`;
-}
-
-function slotLabel(slot) {
-    const text = slot.value;
-    return text.length > 40 ? `${text.slice(0, 37)}...` : text;
-}
+const fileCssUrl = file => `url("backgrounds/${encodeURIComponent(file)}")`;
 
 function isChatLocked() {
     return Boolean(getContext().chatMetadata?.custom_background);
@@ -149,17 +149,12 @@ function setBackgroundStyle(value) {
 }
 
 function apply() {
-    const bg = document.getElementById('bg1');
-    if (!bg) return;
+    if (!document.getElementById('bg1')) return;
 
-    const winner = local.disabled ? null : resolve(currentOrientation());
+    const file = resolveFile(currentOrientation());
     const blockedByLock = isChatLocked() && !local.overrideChatLock;
 
-    if (winner && !blockedByLock) {
-        setBackgroundStyle(slotCssUrl(winner.slot));
-    } else {
-        setBackgroundStyle(hostValue);
-    }
+    setBackgroundStyle(file && !blockedByLock ? fileCssUrl(file) : hostValue);
 }
 
 // The host rewrites #bg1 on chat switch and when a background is picked. Remember
@@ -176,206 +171,158 @@ function watchBackground() {
     observer.observe(bg, { attributes: true, attributeFilter: ['style'] });
 }
 
-// ---------- background library ----------
+// ---------- native panel integration ----------
 
-async function fetchLibrary() {
-    if (libraryCache) return libraryCache;
-    const { getRequestHeaders } = getContext();
-    const response = await fetch('/api/backgrounds/all', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({}),
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    const images = Array.isArray(data) ? data : data.images ?? [];
-    libraryCache = images
-        .map(image => (typeof image === 'string' ? image : image.filename ?? image.name))
-        .filter(Boolean);
-    return libraryCache;
+function activeTabIndex() {
+    try {
+        return $('#bg_tabs').tabs('option', 'active');
+    } catch {
+        return 0;
+    }
 }
 
-// ---------- UI ----------
+function globalTabButton() {
+    return $('#bg_tabs .bg_tabs_list .bg_tab_button').not('.device_bg_tab').first();
+}
+
+function syncTabs() {
+    const onGalleryPanel = activeTabIndex() === 0;
+    globalTabButton().toggleClass('ui-tabs-active', onGalleryPanel && mode === 'global');
+    $('.device_bg_tab').toggleClass('ui-tabs-active', onGalleryPanel && mode === 'device');
+    $('#device_bg_controls').toggle(onGalleryPanel);
+}
+
+function highlightGallery() {
+    const file = getSlot(modeScope(), target);
+    $('#bg_menu_content .bg_example').each(function () {
+        this.classList.toggle('selected-background', Boolean(file) && this.getAttribute('bgfile') === file);
+    });
+}
+
+// Picking a thumbnail writes to the chosen rectangle instead of the native background.
+function onGalleryClick(event) {
+    const thumbnail = event.target.closest?.('#bg_menu_content .bg_example');
+    if (!thumbnail) return;
+    if (event.target.closest('.jg-button, .mobile-only-menu-toggle')) return;
+    if ($('#Backgrounds').hasClass('bg-selection-mode')) return;
+
+    const file = thumbnail.getAttribute('bgfile');
+    if (!file) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setSlot(modeScope(), target, file);
+}
+
+function setMode(next) {
+    if (mode !== next) target = 'landscape';
+    mode = next;
+    refresh();
+}
+
+function renderControls() {
+    const $root = $('#device_bg_rects');
+    if (!$root.length) return;
+
+    const scope = modeScope();
+    const live = currentOrientation();
+    $root.empty();
+
+    for (const orientation of ORIENTATIONS) {
+        const file = getSlot(scope, orientation);
+        const follows = file ? null : followFile(orientation);
+        const clearable = file && !(scope === 'global' && orientation === 'landscape');
+
+        const $rect = $('<div class="device_bg_rect"></div>')
+            .addClass(`device_bg_${orientation}`)
+            .toggleClass('device_bg_target', orientation === target)
+            .toggleClass('device_bg_live', orientation === live)
+            .attr('title', file ?? (follows ? `follows ${follows}` : 'not set'));
+
+        $rect.append($('<div class="device_bg_rect_title"></div>').text(ORIENTATION_TITLE[orientation]));
+        $rect.append(
+            $('<div class="device_bg_rect_file"></div>')
+                .toggleClass('device_bg_dim', !file)
+                .text(file ?? (follows ? `↳ ${follows}` : '—')),
+        );
+
+        if (clearable) {
+            const $clear = $('<div class="device_bg_clear fa-solid fa-xmark" title="Follow"></div>');
+            $clear.on('click', event => {
+                event.stopPropagation();
+                setSlot(scope, orientation, null);
+            });
+            $rect.append($clear);
+        }
+
+        $rect.on('click', () => {
+            target = orientation;
+            refresh();
+        });
+        $root.append($rect);
+    }
+
+    $('#device_bg_override_lock').prop('checked', local.overrideChatLock);
+}
 
 function refresh() {
     apply();
-    renderPanel();
-}
-
-function buildPicker(scope, orientation) {
-    const existing = getSlot(scope, orientation);
-    const $form = $('<div class="device_bg_picker"></div>');
-    const $source = $('<select class="text_pole"><option value="library">Background library</option><option value="url">Image URL</option></select>');
-    const $library = $('<select class="text_pole"></select>');
-    const $url = $('<input class="text_pole" type="text" placeholder="https://..." />');
-    const $save = $('<div class="menu_button">Save</div>');
-    const $cancel = $('<div class="menu_button">Cancel</div>');
-
-    $source.val(existing?.source ?? 'library');
-    $url.val(existing?.source === 'url' ? existing.value : '');
-
-    const toggle = () => {
-        $library.toggle($source.val() === 'library');
-        $url.toggle($source.val() === 'url');
-    };
-    $source.on('change', toggle);
-    toggle();
-
-    fetchLibrary()
-        .then(names => {
-            for (const name of names) $library.append($('<option>').val(name).text(name));
-            if (existing?.source === 'library') $library.val(existing.value);
-        })
-        .catch(error => {
-            console.warn('[device-background] failed to load backgrounds', error);
-            toastr.error('Could not load the background list.', 'Device Background');
-        });
-
-    $save.on('click', () => {
-        const source = $source.val();
-        const value = String(source === 'library' ? $library.val() ?? '' : $url.val()).trim();
-        editing = null;
-        setSlot(scope, orientation, value ? { source, value } : null);
-    });
-    $cancel.on('click', () => {
-        editing = null;
-        renderPanel();
-    });
-
-    return $form.append($source, $library, $url, $('<div class="device_bg_buttons"></div>').append($save, $cancel));
-}
-
-function buildLine(scope, orientation, winnerScope) {
-    const slot = getSlot(scope, orientation);
-    const below = slot ? null : resolveBelow(scope, orientation);
-    const participates = activeScopes().includes(scope);
-
-    const $line = $('<div class="device_bg_line"></div>').toggleClass('device_bg_winner', scope === winnerScope);
-    $line.append($('<span class="device_bg_scope"></span>').text(SCOPE_TITLE[scope]));
-
-    const $value = $('<span class="device_bg_value"></span>');
-    if (slot) {
-        $value.text(slotLabel(slot));
-    } else if (!participates) {
-        $value.addClass('device_bg_dim').text('other device type');
-    } else if (below) {
-        $value.addClass('device_bg_dim').text(`follows ${SCOPE_TITLE[below.scope]}: ${slotLabel(below.slot)}`);
-    } else {
-        $value.addClass('device_bg_dim').text(scope === 'local' ? 'follows host background' : 'not set');
-    }
-    $line.append($value);
-
-    const $set = $('<div class="menu_button"></div>').text(slot ? 'Change' : 'Set');
-    $set.on('click', () => {
-        editing = { scope, orientation };
-        renderPanel();
-    });
-    $line.append($set);
-
-    if (slot) {
-        const $clear = $('<div class="menu_button"></div>').text(scope === 'local' ? 'Follow' : 'Clear');
-        $clear.on('click', () => setSlot(scope, orientation, null));
-        $line.append($clear);
-    }
-
-    const $wrap = $('<div></div>').append($line);
-    if (editing?.scope === scope && editing.orientation === orientation) {
-        $wrap.append(buildPicker(scope, orientation));
-    }
-    return $wrap;
-}
-
-function renderPanel() {
-    const $root = $('#device_bg_sections');
-    if (!$root.length) return;
-
-    const shared = getShared();
-    const orientation = currentOrientation();
-    const winnerOf = o => resolve(o)?.scope;
-
-    $root.empty();
-    for (const o of ORIENTATIONS) {
-        const $section = $('<div class="device_bg_section"></div>').toggleClass('device_bg_current', o === orientation);
-        const $title = $('<div class="device_bg_title"></div>').text(ORIENTATION_TITLE[o]);
-        if (o === orientation) $title.append(' <small>(current)</small>');
-        $section.append($title);
-
-        $section.append(buildLine('local', o, winnerOf(o)));
-        if (shared.advanced) {
-            $section.append(buildLine('desktop', o, winnerOf(o)));
-            $section.append(buildLine('mobile', o, winnerOf(o)));
-        }
-        $section.append(buildLine('all', o, winnerOf(o)));
-        $root.append($section);
-    }
-
-    $('#device_bg_advanced').prop('checked', shared.advanced);
-    $('#device_bg_disabled').prop('checked', local.disabled);
-    $('#device_bg_override_lock').prop('checked', local.overrideChatLock);
-    $('#device_bg_force_class').val(local.forceClass);
-    $('#device_bg_force_row').toggle(shared.advanced);
-    $('#device_bg_status').text(`Now: ${ORIENTATION_TITLE[orientation]}, ${currentClass() === 'mobile' ? 'Mobile' : 'Desktop'}`);
+    syncTabs();
+    renderControls();
+    highlightGallery();
 }
 
 function mountPanel() {
-    $('#extensions_settings2').append(`
-<div id="device_bg_settings" class="extension_container">
-    <div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header">
-            <b>Device Background</b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-        </div>
-        <div class="inline-drawer-content">
-            <div class="device_bg_hint">
-                "This device" is stored only in this browser. "Shared" is synced with your settings.
-                A slot left on "follows" uses the layer below it.
-            </div>
-            <div id="device_bg_status" class="device_bg_hint"></div>
-            <div id="device_bg_sections"></div>
-            <label class="checkbox_label">
-                <input id="device_bg_advanced" type="checkbox" />
-                <span>Advanced: shared slots per device type (synced)</span>
-            </label>
-            <div id="device_bg_force_row" class="device_bg_row">
-                <span>Treat this device as</span>
-                <select id="device_bg_force_class" class="text_pole">
-                    <option value="auto">Auto-detect</option>
-                    <option value="desktop">Desktop</option>
-                    <option value="mobile">Mobile</option>
-                </select>
-            </div>
-            <label class="checkbox_label">
-                <input id="device_bg_override_lock" type="checkbox" />
-                <span>Also override chat-locked backgrounds (this device)</span>
-            </label>
-            <label class="checkbox_label">
-                <input id="device_bg_disabled" type="checkbox" />
-                <span>Turn off on this device</span>
-            </label>
-        </div>
-    </div>
-</div>`);
+    const $list = $('#bg_tabs .bg_tabs_list');
+    if (!$list.length) {
+        console.warn('[device-background] background tabs not found; the panel was not added');
+        return false;
+    }
 
-    $('#device_bg_advanced').on('change', function () {
-        getShared().advanced = this.checked;
-        saveShared();
-        refresh();
+    const $deviceTab = $('<li class="bg_tab_button device_bg_tab"><a>Device</a></li>');
+    globalTabButton().after($deviceTab);
+
+    $deviceTab.on('click', () => {
+        mode = 'device';
+        target = 'landscape';
+        if (activeTabIndex() === 0) {
+            refresh();
+        } else {
+            $('#bg_tabs').tabs('option', 'active', 0); // tabsactivate refreshes
+        }
     });
-    $('#device_bg_force_class').on('change', function () {
-        local.forceClass = this.value;
-        saveLocal();
-        refresh();
-    });
+    globalTabButton().on('click', () => setMode('global'));
+    $('#bg_tabs').on('tabsactivate', () => refresh());
+
+    const $controls = $(`
+<div id="device_bg_controls">
+    <div id="device_bg_rects"></div>
+    <label class="checkbox_label device_bg_lock">
+        <input id="device_bg_override_lock" type="checkbox" />
+        <span>Override chat-locked backgrounds (this device)</span>
+    </label>
+</div>`);
+    $list.after($controls);
+
     $('#device_bg_override_lock').on('change', function () {
         local.overrideChatLock = this.checked;
         saveLocal();
         refresh();
     });
-    $('#device_bg_disabled').on('change', function () {
-        local.disabled = this.checked;
-        saveLocal();
-        refresh();
-    });
+
+    document.addEventListener('click', onGalleryClick, true);
+
+    const gallery = document.getElementById('bg_menu_content');
+    if (gallery) {
+        // The host re-renders thumbnails and re-applies its own highlight; put ours back.
+        new MutationObserver(highlightGallery).observe(gallery, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class'],
+        });
+    }
+    return true;
 }
 
 jQuery(() => {
@@ -383,9 +330,9 @@ jQuery(() => {
     mountPanel();
     watchBackground();
     refresh();
+    initFromNative();
 
     portraitQuery.addEventListener('change', refresh);
-    touchQuery.addEventListener('change', refresh);
     eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(apply, 0));
     eventSource.on(event_types.SETTINGS_UPDATED, () => setTimeout(refresh, 0));
 });

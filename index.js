@@ -10,7 +10,7 @@
 // Portrait:  device portrait -> global portrait -> device landscape -> global landscape
 // Nothing set: the host's own background is left alone.
 
-const VERSION = '0.3.5';
+const VERSION = '0.3.6';
 const LOCAL_KEY = 'device_background_v3';
 const SHARED_KEY = 'device_background';
 const ORIENTATIONS = ['landscape', 'portrait'];
@@ -43,6 +43,38 @@ function currentLocale() {
 const tr = text => STRINGS[currentLocale()]?.[text] ?? text;
 
 const portraitQuery = window.matchMedia('(orientation: portrait)');
+
+// TauriTavern (mobile) draws the status/navigation bar areas natively from a snapshot of
+// #bg1, and only re-renders it when the host's own background code asks. It also knows the
+// real window shape, which the WebView viewport loses while the keyboard is open. Both
+// modules are optional: on plain SillyTavern the imports fail and we fall back.
+let hostBackdrop = null; // { applyWindowBackdrop }
+let hostWindow = null; // { isWindowPortrait, subscribeWindowSnapshot, getWindowSnapshot }
+
+async function loadHostModules() {
+    const [backdrop, layout] = await Promise.allSettled([
+        import('/scripts/window-backdrop.js'),
+        import('/scripts/util/window-layout.js'),
+    ]);
+    if (backdrop.status === 'fulfilled' && typeof backdrop.value.applyWindowBackdrop === 'function') {
+        hostBackdrop = backdrop.value;
+    }
+    if (layout.status === 'fulfilled' && typeof layout.value.isWindowPortrait === 'function') {
+        hostWindow = layout.value;
+        // Fires on rotation and window resizes; the keyboard does not change it.
+        hostWindow.subscribeWindowSnapshot?.(() => refresh());
+    }
+    refresh();
+    publishBackdrop();
+}
+
+function publishBackdrop() {
+    try {
+        hostBackdrop?.applyWindowBackdrop();
+    } catch (error) {
+        console.warn('[device-background] failed to refresh the native window backdrop', error);
+    }
+}
 
 const emptySlots = () => ({ landscape: null, portrait: null });
 
@@ -131,7 +163,10 @@ async function initFromNative() {
 
 // ---------- resolution ----------
 
-const currentOrientation = () => (portraitQuery.matches ? 'portrait' : 'landscape');
+function currentOrientation() {
+    const portrait = hostWindow?.getWindowSnapshot?.() ? hostWindow.isWindowPortrait() : portraitQuery.matches;
+    return portrait ? 'portrait' : 'landscape';
+}
 
 function resolveFile(orientation) {
     const global = getShared().global;
@@ -169,6 +204,7 @@ function setBackgroundStyle(value) {
             bg.style.backgroundImage = value;
             // Observer callbacks run later, so drop our own mutation record here.
             observer?.takeRecords();
+            publishBackdrop();
         }
     } finally {
         applying = false;
@@ -456,6 +492,7 @@ jQuery(() => {
         watchForPanel();
         refresh();
         initFromNative();
+        loadHostModules();
 
         portraitQuery.addEventListener('change', refresh);
         eventSource.on(event_types.CHAT_CHANGED, () => setTimeout(apply, 0));
